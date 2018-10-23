@@ -1,4 +1,4 @@
-.PHONY: clean data lint requirements sync_data_to_s3 sync_data_from_s3 fetch_data unpack_data predict train
+.PHONY: clean data lint requirements sync_data_to_s3 sync_data_from_s3
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -8,95 +8,35 @@ PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 BUCKET = {{ cookiecutter.s3_bucket }}
 PROFILE = {{ cookiecutter.aws_profile }}
 PROJECT_NAME = {{ cookiecutter.repo_name }}
-MODULE_NAME = {{ cookiecutter.module_name }}
 PYTHON_INTERPRETER = {{ cookiecutter.python_interpreter }}
-VIRTUALENV = {{ cookiecutter.virtualenv }}
+
+ifeq (,$(shell which conda))
+HAS_CONDA=False
+else
+HAS_CONDA=True
+endif
 
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
 
-## Install or update Python Dependencies
+## Install Python Dependencies
 requirements: test_environment
-ifeq (conda, $(VIRTUALENV))
-	conda env update --name $(PROJECT_NAME) -f environment.yml
-else
 	pip install -U pip setuptools wheel
 	pip install -r requirements.txt
-endif
 
-## convert raw datasets into fully processed datasets
-data: transform_data
-
-## Fetch, Unpack, and Process raw dataset files
-raw: process_raw
-
-fetch_raw:
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.data.make_dataset fetch
-
-unpack_raw:
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.data.make_dataset unpack
-
-process_raw:
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.data.make_dataset process
-
-## Apply Transformations to produce fully processed Datsets
-transform_data:
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.data.apply_transforms transformer_list.json
-
-## train / fit / build models
-train: models/model_list.json
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.models.train_models model_list.json
-
-## predict / transform / run experiments
-predict: models/predict_list.json
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.models.predict_model predict_list.json
-
-## Convert predictions / transforms / experiments into output data
-analysis: reports/analysis_list.json
-	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.analysis.run_analysis analysis_list.json
+## Make Dataset
+data: requirements
+	$(PYTHON_INTERPRETER) src/data/make_dataset.py
 
 ## Delete all compiled Python files
 clean:
 	find . -type f -name "*.py[co]" -delete
 	find . -type d -name "__pycache__" -delete
 
-clean_cache:
-	rm -rf data/interim/*
-
-clean_raw:
-	rm -f data/raw/*
-
-clean_datasets:
-	rm -f data/processed/*
-
-clean_models:
-	rm -f models/trained/*
-	rm -f models/trained_models.json
-
-clean_predictions:
-	rm -f models/predictions/*
-	rm -f models/predictions.json
-
-clean_workflow:
-	rm -f src/data/raw_datasets.json
-	rm -f src/data/transformer_list.json
-	rm -f models/model_list.json
-	rm -f models/predict_list.json
-	rm -f models/predictions.json
-	rm -f models/trained_models.json
-	rm -f reports/analysis_list.json
-	rm -f reports/summary_list.json
-	rm -f reports/analyses.json
-	rm -f reports/summaries.json
-
-## Run all Unit Tests
-test:
-	cd {{ cookiecutter.module_name }} && pytest --doctest-modules --verbose --cov
-
 ## Lint using flake8
 lint:
-	flake8 {{ cookiecutter.module_name }}
+	flake8 src
 
 ## Upload Data to S3
 sync_data_to_s3:
@@ -116,10 +56,14 @@ endif
 
 ## Set up python interpreter environment
 create_environment:
-ifeq (conda,$(VIRTUALENV))
+ifeq (True,$(HAS_CONDA))
 		@echo ">>> Detected conda, creating conda environment."
-	conda env create --name $(PROJECT_NAME) -f environment.yml
-		@echo ">>> New conda env created. Activate with: 'conda activate $(PROJECT_NAME)'"
+ifeq (3,$(findstring 3,$(PYTHON_INTERPRETER)))
+	conda create --name $(PROJECT_NAME) python=3
+else
+	conda create --name $(PROJECT_NAME) python=2.7
+endif
+		@echo ">>> New conda env created. Activate with:\nsource activate $(PROJECT_NAME)"
 else
 	@pip install -q virtualenv virtualenvwrapper
 	@echo ">>> Installing virtualenvwrapper if not already intalled.\nMake sure the following lines are in shell startup file\n\
@@ -128,13 +72,8 @@ else
 	@echo ">>> New virtualenv created. Activate with:\nworkon $(PROJECT_NAME)"
 endif
 
-## Test python environment is set-up correctly
+## Test python environment is setup correctly
 test_environment:
-ifeq (conda,$(VIRTUALENV))
-ifneq (${CONDA_DEFAULT_ENV}, $(PROJECT_NAME))
-	$(error Must activate `$(PROJECT_NAME)` environment before proceeding)
-endif
-endif
 	$(PYTHON_INTERPRETER) test_environment.py
 
 #################################################################################
@@ -147,7 +86,7 @@ endif
 # Self Documenting Commands                                                     #
 #################################################################################
 
-.DEFAULT_GOAL := show-help
+.DEFAULT_GOAL := help
 
 # Inspired by <http://marmelab.com/blog/2016/02/29/auto-documented-makefile.html>
 # sed script explained:
@@ -164,8 +103,8 @@ endif
 # 	* print line
 # Separate expressions are necessary because labels cannot be delimited by
 # semicolon; see <http://stackoverflow.com/a/11799865/1968>
-.PHONY: show-help
-show-help:
+.PHONY: help
+help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
 	@echo
 	@sed -n -e "/^## / { \
