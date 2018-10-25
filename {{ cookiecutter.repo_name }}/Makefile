@@ -19,15 +19,9 @@ endif
 #################################################################################
 # COMMANDS                                                                      #
 #################################################################################
-
-## Install Python Dependencies
-requirements: test_environment
-	pip install -U pip setuptools wheel
-	pip install -r requirements.txt
-
 ## Make Dataset
-data: requirements
-	$(PYTHON_INTERPRETER) src/data/make_dataset.py
+data: test_environment
+	$(PYTHON_INTERPRETER) -m {{ cookiecutter.module_name }}.data.make_dataset
 
 ## Delete all compiled Python files
 clean:
@@ -60,8 +54,10 @@ ifeq (True,$(HAS_CONDA))
 		@echo ">>> Detected conda, creating conda environment."
 ifeq (3,$(findstring 3,$(PYTHON_INTERPRETER)))
 	conda create --name $(PROJECT_NAME) python=3
+	ource activate $(PROJECT_NAME)
 else
 	conda create --name $(PROJECT_NAME) python=2.7
+	ource activate $(PROJECT_NAME)
 endif
 		@echo ">>> New conda env created. Activate with:\nsource activate $(PROJECT_NAME)"
 else
@@ -74,7 +70,30 @@ endif
 
 ## Test python environment is setup correctly
 test_environment:
+ifeq (conda,$(VIRTUALENV))
+ifneq (${CONDA_DEFAULT_ENV}, $(PROJECT_NAME))
+	$(error Must activate `$(PROJECT_NAME)` environment before proceeding)
+endif
+endif
 	$(PYTHON_INTERPRETER) test_environment.py
+
+## Install Python Dependencies
+requirements: test_environment
+ifeq (conda, $(VIRTUALENV))
+	conda env update --name $(PROJECT_NAME) -f environment.yml
+	$(PYTHON_INTERPRETER) -m ipykernel install --user --name $(PROJECT_NAME)
+else
+	pip install -U pip setuptools wheel
+	pip install -r requirements.txt
+endif
+
+## Install Python Dependencies
+export_environment: test_environment
+ifeq (conda, $(VIRTUALENV))
+	conda env export > environment.yml
+else
+	$(error Not sure how to export with pip)
+endif
 
 #################################################################################
 # PROJECT RULES                                                                 #
